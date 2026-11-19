@@ -136,6 +136,8 @@ void FMarginCustomization::CustomizeHeader(
         .VAlign(VAlign_Center)
         [
             SNew(SButton)
+            .IsEnabled_Lambda([Handle = StructPropertyHandle]() { return Handle->GetNumPerObjectValues() == 1; })
+            .ToolTipText(NSLOCTEXT("NineSliceEditor", "SingleBrush", "Edit the margins of a single selected brush."))
             .Text(
                 FText::FromString(
                     TEXT("Edit")
@@ -755,7 +757,7 @@ FReply FMarginCustomization::OnEditClicked()
     );
 
     if (
-        RawData.Num() == 0 ||
+        RawData.Num() != 1 ||
         RawData[0] == nullptr
     )
     {

@@ -7,4 +7,6 @@ class FNineSliceEditor : public IModuleInterface
 public:
     virtual void StartupModule() override;
     virtual void ShutdownModule() override;
+private:
+    TSharedPtr<class IPropertyTypeIdentifier> BrushMarginIdentifier;
 };

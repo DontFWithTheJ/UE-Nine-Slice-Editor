@@ -6,6 +6,8 @@
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/MessageDialog.h"
+#include "UObject/UnrealType.h"
 #include "PropertyHandle.h"
 #include "Rendering/DrawElements.h"
 #include "ScopedTransaction.h"
@@ -26,7 +28,7 @@
 
 namespace
 {
-    TWeakPtr<SWindow> ActiveNineSliceEditorWindow;
+    TMap<TWeakPtr<IPropertyHandle>, TWeakPtr<SWindow>> OpenBrushWindows;
 
     const TCHAR* NineSliceColorConfigSection =
         TEXT("NineSliceEditor");
@@ -81,10 +83,8 @@ void SNineSliceEditor::OpenEditorWindow(
     const TSharedPtr<SWindow>& InParentWindow
 )
 {
-    if (
-        TSharedPtr<SWindow> ExistingWindow =
-            ActiveNineSliceEditorWindow.Pin()
-    )
+    const TWeakPtr<IPropertyHandle> Target = InLeftHandle;
+    if (TSharedPtr<SWindow> ExistingWindow = OpenBrushWindows.FindRef(Target).Pin())
     {
         if (ExistingWindow->IsWindowMinimized())
         {
@@ -121,13 +121,15 @@ void SNineSliceEditor::OpenEditorWindow(
             TEXT("Window")
         );
 
+    TArray<UObject*> Owners;
+    InLeftHandle->GetOuterObjects(Owners);
+    const FText WindowTitle = Owners.Num() == 1 && IsValid(Owners[0])
+        ? FText::Format(NSLOCTEXT("NineSliceEditor", "BrushWindowTitle", "Nine-Slice Editor - {0}"), FText::FromString(Owners[0]->GetName()))
+        : NSLOCTEXT("NineSliceEditor", "WindowTitle", "Nine-Slice Editor");
+
     TSharedRef<SWindow> Window =
         SNew(SWindow)
-        .Title(
-            FText::FromString(
-                TEXT("Nine-Slice Editor")
-            )
-        )
+        .Title(WindowTitle)
         .ClientSize(
             FVector2D(
                 1320.0f,
@@ -165,16 +167,15 @@ void SNineSliceEditor::OpenEditorWindow(
             Editor
         ];
 
-    ActiveNineSliceEditorWindow =
-        Window;
+    OpenBrushWindows.Add(Target, Window);
 
     Window->SetOnWindowClosed(
         FOnWindowClosed::CreateLambda(
-            [](
+            [Target](
                 const TSharedRef<SWindow>& ClosedWindow
             )
             {
-                ActiveNineSliceEditorWindow.Reset();
+                OpenBrushWindows.Remove(Target);
             }
         )
     );
@@ -2936,59 +2937,25 @@ void SNineSliceEditor::ReadPropertyValues()
     ClampMargins();
 }
 
-void SNineSliceEditor::ApplyMargins()
+bool SNineSliceEditor::ApplyMargins()
 {
-    const float SourceWidth =
-        GetSourceWidth();
-
-    const float SourceHeight =
-        GetSourceHeight();
-
-    if (
-        SourceWidth <= 0.0f ||
-        SourceHeight <= 0.0f
-    )
+    const float Width = GetSourceWidth();
+    const float Height = GetSourceHeight();
+    const TSharedPtr<IPropertyHandle> MarginHandle = LeftHandle.IsValid() ? LeftHandle->GetParentHandle() : nullptr;
+    if (Width <= 0 || Height <= 0 || !MarginHandle.IsValid() || !MarginHandle->IsValidHandle()
+        || !MarginHandle->IsEditable() || MarginHandle->GetNumPerObjectValues() != 1)
     {
-        return;
+        return false;
     }
-
-    FScopedTransaction Transaction(
-        FText::FromString(
-            TEXT("Edit 9-Slice Margins")
-        )
-    );
-
-    if (LeftHandle.IsValid())
+    const FStructProperty* Property = CastField<FStructProperty>(MarginHandle->GetProperty());
+    if (!Property)
     {
-        LeftHandle->SetValue(
-            LeftMargin /
-            SourceWidth
-        );
+        return false;
     }
-
-    if (TopHandle.IsValid())
-    {
-        TopHandle->SetValue(
-            TopMargin /
-            SourceHeight
-        );
-    }
-
-    if (RightHandle.IsValid())
-    {
-        RightHandle->SetValue(
-            RightMargin /
-            SourceWidth
-        );
-    }
-
-    if (BottomHandle.IsValid())
-    {
-        BottomHandle->SetValue(
-            BottomMargin /
-            SourceHeight
-        );
-    }
+    const FMargin Value(LeftMargin / Width, TopMargin / Height, RightMargin / Width, BottomMargin / Height);
+    FString Formatted;
+    Property->Struct->ExportText(Formatted, &Value, &Value, nullptr, PPF_None, nullptr);
+    return MarginHandle->SetValueFromFormattedString(Formatted) == FPropertyAccess::Success;
 }
 
 void SNineSliceEditor::ClampMargins()
@@ -5137,6 +5104,13 @@ FReply SNineSliceEditor::OnMouseButtonDown(
         );
 }
 
+void SNineSliceEditor::OnMouseCaptureLost(const FCaptureLostEvent& Event)
+{
+    ActiveHandle = EHandle::None;
+    bPanningCanvas = false;
+    SCompoundWidget::OnMouseCaptureLost(Event);
+}
+
 FReply SNineSliceEditor::OnMouseButtonUp(
     const FGeometry& MyGeometry,
     const FPointerEvent& MouseEvent
@@ -5563,7 +5537,11 @@ void SNineSliceEditor::OnBottomValueCommitted(
 
 FReply SNineSliceEditor::OnApplyClicked()
 {
-    ApplyMargins();
+    if (!ApplyMargins())
+    {
+        FMessageDialog::Open(EAppMsgType::Ok, NSLOCTEXT("NineSliceEditor", "ApplyFailed", "Could not apply margins. Check that the original brush is still editable."));
+        return FReply::Handled();
+    }
     SaveCloseWindowOnApplySetting();
     SavePreviewPanelVisibleSetting();
 

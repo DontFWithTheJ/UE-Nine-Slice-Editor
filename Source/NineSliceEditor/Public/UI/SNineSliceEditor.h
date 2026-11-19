@@ -57,6 +57,7 @@ protected:
         bool bParentEnabled
     ) const override;
 
+    virtual void OnMouseCaptureLost(const FCaptureLostEvent& Event) override;
     virtual FReply OnMouseButtonDown(
         const FGeometry& MyGeometry,
         const FPointerEvent& MouseEvent
@@ -416,7 +417,7 @@ private:
 
     void ReadPropertyValues();
 
-    void ApplyMargins();
+    bool ApplyMargins();
 
     void ClampMargins();
 

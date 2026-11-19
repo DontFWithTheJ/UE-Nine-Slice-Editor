@@ -4,6 +4,23 @@
 
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
+#include "PropertyHandle.h"
+#include "Styling/SlateBrush.h"
+#include "UObject/UnrealType.h"
+
+namespace
+{
+    class FBrushMarginIdentifier final : public IPropertyTypeIdentifier
+    {
+    public:
+        bool IsPropertyTypeCustomized(const IPropertyHandle& Handle) const override
+        {
+            const TSharedPtr<IPropertyHandle> Parent = Handle.GetParentHandle();
+            const FStructProperty* Property = Parent.IsValid() ? CastField<FStructProperty>(Parent->GetProperty()) : nullptr;
+            return Property && Property->Struct == FSlateBrush::StaticStruct();
+        }
+    };
+}
 
 void FNineSliceEditor::StartupModule()
 {
@@ -12,15 +29,13 @@ void FNineSliceEditor::StartupModule()
             "PropertyEditor"
         );
 
-    PropertyEditorModule.UnregisterCustomPropertyTypeLayout(
-        TEXT("Margin")
-    );
-
+    BrushMarginIdentifier = MakeShared<FBrushMarginIdentifier>();
     PropertyEditorModule.RegisterCustomPropertyTypeLayout(
         TEXT("Margin"),
         FOnGetPropertyTypeCustomizationInstance::CreateStatic(
             &FMarginCustomization::MakeInstance
-        )
+        ),
+        BrushMarginIdentifier
     );
 
     PropertyEditorModule.NotifyCustomizationModuleChanged();
@@ -39,7 +54,7 @@ void FNineSliceEditor::ShutdownModule()
         );
 
     PropertyEditorModule.UnregisterCustomPropertyTypeLayout(
-        TEXT("Margin")
+        TEXT("Margin"), BrushMarginIdentifier
     );
 
     PropertyEditorModule.NotifyCustomizationModuleChanged();

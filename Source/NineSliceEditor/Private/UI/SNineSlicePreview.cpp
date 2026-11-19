@@ -2578,9 +2578,4 @@ void SNineSlicePreview::SaveCardScaleSettings(
         ],
         GEditorPerProjectIni
     );
-
-    GConfig->Flush(
-        false,
-        GEditorPerProjectIni
-    );
 }
